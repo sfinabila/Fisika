@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <title>Simulasi Tikungan Jalan – Fisika Dasar</title>
+  <style>
+    body { font-family: Arial, sans-serif; background:#f5f5f5; margin:20px; }
+    h1 { text-align:center; }
+    .container { display:grid; grid-template-columns: 300px 1fr; gap:20px; }
+    .panel { background:white; padding:15px; border-radius:12px; box-shadow:0 4px 10px rgba(0,0,0,0.1); }
+    label { display:block; margin-top:10px; }
+    input[type=range] { width:100%; }
+    .status { margin-top:15px; font-weight:bold; font-size:1.1em; }
+    canvas { background:white; border-radius:12px; box-shadow:0 4px 10px rgba(0,0,0,0.1); }
+  </style>
+</head>
+<body>
+<h1>Simulasi Tikungan Jalan (Datar & Miring)</h1>
+
+<div class="container">
+  <!-- Panel Kontrol -->
+  <div class="panel">
+    <h3>Parameter</h3>
+
+    <label>Jari-jari tikungan r (m): <span id="rVal">50</span></label>
+    <input type="range" id="r" min="10" max="200" value="50" />
+
+    <label>Kecepatan v (m/s): <span id="vVal">15</span></label>
+    <input type="range" id="v" min="1" max="40" value="15" />
+
+    <label>Koefisien gesek μ<sub>s</sub>: <span id="muVal">0.6</span></label>
+    <input type="range" id="mu" min="0.1" max="1" step="0.05" value="0.6" />
+
+    <label>Sudut bank θ (derajat): <span id="thetaVal">0</span></label>
+    <input type="range" id="theta" min="0" max="30" value="0" />
+
+    <label><input type="checkbox" id="rain" /> Rain mode (jalan licin)</label>
+
+    <div class="status" id="status">Status: -</div>
+    <div id="vmaxInfo"></div>
+  </div>
+
+  <!-- Area Visualisasi -->
+  <div>
+    <canvas id="simCanvas" width="500" height="300"></canvas><br><br>
+    <canvas id="graphCanvas" width="500" height="300"></canvas>
+  </div>
+</div>
+
+<script>
+const g = 9.8;
+const rSlider = document.getElementById('r');
+const vSlider = document.getElementById('v');
+const muSlider = document.getElementById('mu');
+const thetaSlider = document.getElementById('theta');
+const rainCheck = document.getElementById('rain');
+
+const rVal = document.getElementById('rVal');
+const vVal = document.getElementById('vVal');
+const muVal = document.getElementById('muVal');
+const thetaVal = document.getElementById('thetaVal');
+
+const statusText = document.getElementById('status');
+const vmaxInfo = document.getElementById('vmaxInfo');
+
+const simCtx = document.getElementById('simCanvas').getContext('2d');
+const graphCtx = document.getElementById('graphCanvas').getContext('2d');
+
+// ===================== LOGIKA STATUS & TEORI =====================
+function updateStatus() {
+  let r = +rSlider.value;
+  let v = +vSlider.value;
+  let mu = +muSlider.value;
+  let theta = +thetaSlider.value * Math.PI / 180;
+
+  if (rainCheck.checked) mu *= 0.5;
+
+  rVal.textContent = r;
+  vVal.textContent = v;
+  muVal.textContent = mu.toFixed(2);
+  thetaVal.textContent = (theta * 180 / Math.PI).toFixed(0);
+
+  let vmax = (theta === 0)
+    ? Math.sqrt(mu * g * r)
+    : Math.sqrt(g * r * Math.tan(theta));
+
+  vmaxInfo.innerHTML = `v<sub>max</sub> = ${vmax.toFixed(2)} m/s`;
+
+  if (v <= vmax) {
+    statusText.textContent = 'Status: AMAN';
+    statusText.style.color = 'green';
+  } else {
+    statusText.textContent = 'Status: SELIP';
+    statusText.style.color = 'red';
+  }
+
+  drawGraph(mu, theta);
+}
+
+// ===================== ANIMASI GERAK =====================
+let angle = 0;
+let slipOffset = 0;
+let lastTime = 0;
+
+function drawSimulation(time) {
+  const r = +rSlider.value;
+  const v = +vSlider.value;
+  let mu = +muSlider.value;
+  const theta = +thetaSlider.value * Math.PI / 180;
+  if (rainCheck.checked) mu *= 0.5;
+
+  simCtx.clearRect(0,0,500,300);
+
+  const cx = 250;
+  const cy = 150;
+  const scale = 120 / r;
+
+  const dt = (time - lastTime) / 1000 || 0;
+  lastTime = time;
+
+  const omega = v / r;
+  angle += omega * dt;
+
+  const vmax = (theta === 0)
+    ? Math.sqrt(mu * g * r)
+    : Math.sqrt(g * r * Math.tan(theta));
+
+  const slipping = v > vmax;
+  if (slipping) slipOffset += 40 * dt;
+  else slipOffset = 0;
+
+  // lintasan ideal
+  simCtx.strokeStyle = '#aaa';
+  simCtx.beginPath();
+  simCtx.arc(cx, cy, r * scale, 0, Math.PI * 2);
+  simCtx.stroke();
+
+  // posisi mobil
+  const effectiveR = r + slipOffset;
+  const x = cx + effectiveR * Math.cos(angle) * scale;
+  const y = cy + effectiveR * Math.sin(angle) * scale;
+
+  simCtx.save();
+  simCtx.translate(x, y);
+  simCtx.rotate(angle + Math.PI/2);
+  simCtx.fillStyle = slipping ? 'red' : '#0077cc';
+  simCtx.fillRect(-10, -20, 20, 40);
+  simCtx.restore();
+
+  simCtx.fillStyle = 'black';
+  simCtx.fillText(slipping ? 'SELIP: mobil keluar lintasan' : 'AMAN: gerak melingkar stabil', 10, 20);
+
+  // ================= DIAGRAM GAYA MINI (DINAMIS) =================
+  const fx = 420;
+  const fy = 200;
+
+  simCtx.fillStyle = 'black';
+  simCtx.fillText('Diagram Gaya', fx - 30, fy - 70);
+
+  // hitung gaya (relatif, untuk visualisasi)
+  const Fc = (v * v) / r; // sentripetal ~ v^2/r
+  const FfMax = mu * g;   // gesek maks ~ mu g
+  const scaleF = 30;
+
+  // titik benda
+  simCtx.beginPath();
+  simCtx.arc(fx, fy, 4, 0, Math.PI * 2);
+  simCtx.fill();
+
+  // gaya berat (mg) – konstan
+  simCtx.strokeStyle = 'red';
+  simCtx.beginPath();
+  simCtx.moveTo(fx, fy);
+  simCtx.lineTo(fx, fy + scaleF);
+  simCtx.stroke();
+  simCtx.fillText('mg', fx + 5, fy + scaleF);
+
+  // gaya normal (N) – konstan
+  simCtx.strokeStyle = 'green';
+  simCtx.beginPath();
+  simCtx.moveTo(fx, fy);
+  simCtx.lineTo(fx, fy - scaleF);
+  simCtx.stroke();
+  simCtx.fillText('N', fx + 5, fy - scaleF);
+
+  // gaya gesek / sentripetal (f) – DINAMIS
+  const fLen = Math.min(Fc / FfMax, 1) * scaleF;
+  simCtx.strokeStyle = slipping ? 'red' : 'blue';
+  simCtx.beginPath();
+  simCtx.moveTo(fx, fy);
+  simCtx.lineTo(fx - fLen, fy);
+  simCtx.stroke();
+  simCtx.fillText('f', fx - fLen - 10, fy - 5);
+}
+
+function animate(time) {
+  drawSimulation(time);
+  requestAnimationFrame(animate);
+}
+
+// ===================== GRAFIK =====================
+function drawGraph(mu, theta) {
+  graphCtx.clearRect(0,0,500,300);
+  graphCtx.strokeStyle = 'black';
+  graphCtx.beginPath();
+
+  for (let r = 10; r <= 200; r += 2) {
+    let vmax = (theta === 0)
+      ? Math.sqrt(mu * g * r)
+      : Math.sqrt(g * r * Math.tan(theta));
+
+    let x = (r - 10) / 190 * 480 + 10;
+    let y = 280 - vmax / 40 * 260;
+
+    if (r === 10) graphCtx.moveTo(x,y);
+    else graphCtx.lineTo(x,y);
+  }
+  graphCtx.stroke();
+
+  graphCtx.fillText('r (m)', 240, 295);
+  graphCtx.save();
+  graphCtx.rotate(-Math.PI/2);
+  graphCtx.fillText('v_max (m/s)', -170, 15);
+  graphCtx.restore();
+}
+
+// ===================== EVENT =====================
+[rSlider, vSlider, muSlider, thetaSlider, rainCheck].forEach(el => el.addEventListener('input', updateStatus));
+updateStatus();
+requestAnimationFrame(animate);
+</script>
+</body>
+</html>
